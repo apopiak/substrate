@@ -47,7 +47,7 @@ use sp_core::{
 use sp_keystore::{KeystoreExt, SyncCryptoStore};
 
 use sp_core::{
-	OpaquePeerId, crypto::KeyTypeId, ed25519, sr25519, ecdsa, H256, LogLevel,
+	OpaquePeerId, crypto::KeyTypeId, ed25519, sr25519, ecdsa, H256, LogLevel, LogLevelFilter,
 	offchain::{
 		Timestamp, HttpRequestId, HttpRequestStatus, HttpError, StorageKind, OpaqueNetworkState,
 	},
@@ -1051,7 +1051,7 @@ pub trait Offchain {
 
 /// Wasm only interface that provides functions for calling into the allocator.
 #[runtime_interface(wasm_only)]
-trait Allocator {
+pub trait Allocator {
 	/// Malloc the given number of bytes and return the pointer to the allocated memory location.
 	fn malloc(&mut self, size: u32) -> Pointer<u8> {
 		self.allocate_memory(size).expect("Failed to allocate memory")
@@ -1081,6 +1081,11 @@ pub trait Logging {
 				message,
 			)
 		}
+	}
+
+	/// Returns the max log level used by the host.
+	fn max_level() -> LogLevelFilter {
+		log::max_level().into()
 	}
 }
 

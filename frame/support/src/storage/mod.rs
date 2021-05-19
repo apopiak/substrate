@@ -26,6 +26,9 @@ pub use sp_runtime::TransactionOutcome;
 
 pub mod unhashed;
 pub mod hashed;
+pub mod bounded_btree_map;
+pub mod bounded_btree_set;
+pub mod bounded_vec;
 pub mod child;
 #[doc(hidden)]
 pub mod generator;
@@ -806,19 +809,23 @@ pub trait StorageDecodeLength: private::Sealed + codec::DecodeLength {
 /// outside of this crate.
 mod private {
 	use super::*;
+	use bounded_vec::BoundedVec;
 
 	pub trait Sealed {}
 
 	impl<T: Encode> Sealed for Vec<T> {}
 	impl<Hash: Encode> Sealed for Digest<Hash> {}
+	impl<T, S> Sealed for BoundedVec<T, S> {}
+	impl<K, V, S> Sealed for bounded_btree_map::BoundedBTreeMap<K, V, S> {}
+	impl<T, S> Sealed for bounded_btree_set::BoundedBTreeSet<T, S> {}
 }
 
 impl<T: Encode> StorageAppend<T> for Vec<T> {}
 impl<T: Encode> StorageDecodeLength for Vec<T> {}
 
-/// We abuse the fact that SCALE does not put any marker into the encoding, i.e.
-/// we only encode the internal vec and we can append to this vec. We have a test that ensures
-/// that if the `Digest` format ever changes, we need to remove this here.
+/// We abuse the fact that SCALE does not put any marker into the encoding, i.e. we only encode the
+/// internal vec and we can append to this vec. We have a test that ensures that if the `Digest`
+/// format ever changes, we need to remove this here.
 impl<Hash: Encode> StorageAppend<DigestItem<Hash>> for Digest<Hash> {}
 
 #[cfg(test)]

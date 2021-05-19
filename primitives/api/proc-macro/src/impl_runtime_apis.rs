@@ -202,11 +202,7 @@ fn generate_runtime_api_base_structures() -> Result<TokenStream> {
 		pub struct RuntimeApi {}
 		/// Implements all runtime apis for the client side.
 		#[cfg(any(feature = "std", test))]
-		pub struct RuntimeApiImpl<Block: #crate_::BlockT, C: #crate_::CallApiAt<Block> + 'static>
-			where
-				// Rust bug: https://github.com/rust-lang/rust/issues/24159
-				C::StateBackend: #crate_::StateBackend<#crate_::HashFor<Block>>,
-		{
+		pub struct RuntimeApiImpl<Block: #crate_::BlockT, C: #crate_::CallApiAt<Block> + 'static> {
 			call: &'static C,
 			commit_on_success: std::cell::RefCell<bool>,
 			initialized_block: std::cell::RefCell<Option<#crate_::BlockId<Block>>>,
@@ -223,25 +219,16 @@ fn generate_runtime_api_base_structures() -> Result<TokenStream> {
 		#[cfg(any(feature = "std", test))]
 		unsafe impl<Block: #crate_::BlockT, C: #crate_::CallApiAt<Block>> Send
 			for RuntimeApiImpl<Block, C>
-				where
-					// Rust bug: https://github.com/rust-lang/rust/issues/24159
-					C::StateBackend: #crate_::StateBackend<#crate_::HashFor<Block>>,
 		{}
 
 		#[cfg(any(feature = "std", test))]
 		unsafe impl<Block: #crate_::BlockT, C: #crate_::CallApiAt<Block>> Sync
 			for RuntimeApiImpl<Block, C>
-				where
-					// Rust bug: https://github.com/rust-lang/rust/issues/24159
-					C::StateBackend: #crate_::StateBackend<#crate_::HashFor<Block>>,
 		{}
 
 		#[cfg(any(feature = "std", test))]
 		impl<Block: #crate_::BlockT, C: #crate_::CallApiAt<Block>> #crate_::ApiExt<Block> for
 			RuntimeApiImpl<Block, C>
-				where
-					// Rust bug: https://github.com/rust-lang/rust/issues/24159
-					C::StateBackend: #crate_::StateBackend<#crate_::HashFor<Block>>,
 		{
 			type StateBackend = C::StateBackend;
 
@@ -282,16 +269,14 @@ fn generate_runtime_api_base_structures() -> Result<TokenStream> {
 				self.recorder = Some(Default::default());
 			}
 
+			fn proof_recorder(&self) -> Option<#crate_::ProofRecorder<Block>> {
+				self.recorder.clone()
+			}
+
 			fn extract_proof(&mut self) -> Option<#crate_::StorageProof> {
 				self.recorder
 					.take()
-					.map(|recorder| {
-						let trie_nodes = recorder.read()
-							.iter()
-							.filter_map(|(_k, v)| v.as_ref().map(|v| v.to_vec()))
-							.collect();
-						#crate_::StorageProof::new(trie_nodes)
-					})
+					.map(|recorder| recorder.to_storage_proof())
 			}
 
 			fn into_storage_changes(
@@ -321,8 +306,6 @@ fn generate_runtime_api_base_structures() -> Result<TokenStream> {
 			for RuntimeApi
 				where
 					C: #crate_::CallApiAt<Block> + 'static,
-					// Rust bug: https://github.com/rust-lang/rust/issues/24159
-					C::StateBackend: #crate_::StateBackend<#crate_::HashFor<Block>>,
 		{
 			type RuntimeApi = RuntimeApiImpl<Block, C>;
 
@@ -341,11 +324,7 @@ fn generate_runtime_api_base_structures() -> Result<TokenStream> {
 		}
 
 		#[cfg(any(feature = "std", test))]
-		impl<Block: #crate_::BlockT, C: #crate_::CallApiAt<Block>> RuntimeApiImpl<Block, C>
-			where
-				// Rust bug: https://github.com/rust-lang/rust/issues/24159
-				C::StateBackend: #crate_::StateBackend<#crate_::HashFor<Block>>,
-		{
+		impl<Block: #crate_::BlockT, C: #crate_::CallApiAt<Block>> RuntimeApiImpl<Block, C> {
 			fn call_api_at<
 				R: #crate_::Encode + #crate_::Decode + PartialEq,
 				F: FnOnce(

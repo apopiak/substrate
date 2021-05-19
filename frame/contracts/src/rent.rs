@@ -388,7 +388,7 @@ where
 			None | Some(ContractInfo::Tombstone(_)) => return Err(IsTombstone),
 			Some(ContractInfo::Alive(contract)) => contract,
 		};
-		let module = PrefabWasmModule::from_storage_noinstr(alive_contract_info.code_hash)
+		let module = <PrefabWasmModule<T>>::from_storage_noinstr(alive_contract_info.code_hash)
 			.map_err(|_| IsTombstone)?;
 		let code_size = module.occupied_storage();
 		let current_block_number = <frame_system::Pallet<T>>::block_number();
@@ -399,15 +399,15 @@ where
 			&alive_contract_info,
 			code_size,
 		);
+
+		// We skip the eviction in case one is in order.
+		// Evictions should only be performed by [`try_eviction`].
 		let new_contract_info = Self::enact_verdict(
-			account, alive_contract_info, current_block_number, verdict, Some(module),
+			account, alive_contract_info, current_block_number, verdict, None,
 		);
 
 		// Check what happened after enaction of the verdict.
-		let alive_contract_info = match new_contract_info.map_err(|_| IsTombstone)? {
-			None => return Err(IsTombstone),
-			Some(contract) => contract,
-		};
+		let alive_contract_info = new_contract_info.map_err(|_| IsTombstone)?.ok_or_else(|| IsTombstone)?;
 
 		// Compute how much would the fee per block be with the *updated* balance.
 		let total_balance = T::Currency::total_balance(account);
@@ -460,16 +460,13 @@ where
 	///
 	/// Result<(CallerCodeSize, DestCodeSize), (DispatchError, CallerCodeSize, DestCodesize)>
 	pub fn restore_to(
-		origin: T::AccountId,
+		origin: &T::AccountId,
+		mut origin_contract: AliveContractInfo<T>,
 		dest: T::AccountId,
 		code_hash: CodeHash<T>,
 		rent_allowance: BalanceOf<T>,
 		delta: Vec<crate::exec::StorageKey>,
 	) -> Result<(u32, u32), (DispatchError, u32, u32)> {
-		let mut origin_contract = <ContractInfoOf<T>>::get(&origin)
-			.and_then(|c| c.get_alive())
-			.ok_or((Error::<T>::InvalidSourceContract.into(), 0, 0))?;
-
 		let child_trie_info = origin_contract.child_trie_info();
 
 		let current_block = <frame_system::Pallet<T>>::block_number();
