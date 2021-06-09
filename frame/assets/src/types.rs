@@ -24,9 +24,6 @@ use frame_support::traits::fungible;
 use sp_runtime::{FixedPointNumber, FixedPointOperand, FixedU128};
 use sp_runtime::traits::Convert;
 
-use sp_runtime::{FixedPointNumber, FixedPointOperand, FixedU128};
-use sp_runtime::traits::Convert;
-
 pub(super) type DepositBalanceOf<T, I = ()> =
 	<<T as Config<I>>::Currency as Currency<<T as SystemConfig>::AccountId>>::Balance;
 
