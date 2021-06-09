@@ -23,10 +23,6 @@ use sp_runtime::{TokenError, traits::ConvertInto};
 use frame_support::{assert_ok, assert_noop, traits::Currency};
 use pallet_balances::Error as BalancesError;
 
-fn last_event() -> mock::Event {
-	frame_system::Pallet::<Test>::events().pop().expect("Event expected").event
-}
-
 #[test]
 fn basic_minting_should_work() {
 	new_test_ext().execute_with(|| {
@@ -401,10 +397,7 @@ fn transferring_less_than_one_unit_is_fine() {
 		assert_ok!(Assets::mint(Origin::signed(1), 0, 1, 100));
 		assert_eq!(Assets::balance(0, 1), 100);
 		assert_ok!(Assets::transfer(Origin::signed(1), 0, 2, 0));
-		assert_eq!(
-			last_event(),
-			mock::Event::pallet_assets(crate::Event::Transferred(0, 1, 2, 0)),
-		);
+		System::assert_last_event(mock::Event::pallet_assets(crate::Event::Transferred(0, 1, 2, 0)));
 	});
 }
 
@@ -641,9 +634,9 @@ fn balance_conversion_should_work() {
 		let not_sufficient = 23;
 		assert_ok!(Assets::force_create(Origin::root(), not_sufficient, 1, false, 10));
 
-		assert_eq!(BalanceToAssetBalance::<Test, Balances, ConvertInto>::to_asset_balance(100, 1234), Err(ConversionError::AssetMissing));
-		assert_eq!(BalanceToAssetBalance::<Test, Balances, ConvertInto>::to_asset_balance(100, not_sufficient), Err(ConversionError::AssetNotSufficient));
+		assert_eq!(BalanceToAssetBalance::<Balances, Test, ConvertInto>::to_asset_balance(100, 1234), Err(ConversionError::AssetMissing));
+		assert_eq!(BalanceToAssetBalance::<Balances, Test, ConvertInto>::to_asset_balance(100, not_sufficient), Err(ConversionError::AssetNotSufficient));
 		// 10 / 1 == 10 -> the conversion should 10x the value
-		assert_eq!(BalanceToAssetBalance::<Test, Balances, ConvertInto>::to_asset_balance(100, id), Ok(100 * 10));
+		assert_eq!(BalanceToAssetBalance::<Balances, Test, ConvertInto>::to_asset_balance(100, id), Ok(100 * 10));
 	});
 }

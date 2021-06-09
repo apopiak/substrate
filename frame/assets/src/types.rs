@@ -18,6 +18,11 @@
 //! Various basic types for use in the assets pallet.
 
 use super::*;
+use frame_support::pallet_prelude::*;
+
+use frame_support::traits::fungible;
+use sp_runtime::{FixedPointNumber, FixedPointOperand, FixedU128};
+use sp_runtime::traits::Convert;
 
 use sp_runtime::{FixedPointNumber, FixedPointOperand, FixedU128};
 use sp_runtime::traits::Convert;
@@ -25,7 +30,7 @@ use sp_runtime::traits::Convert;
 pub(super) type DepositBalanceOf<T, I = ()> =
 	<<T as Config<I>>::Currency as Currency<<T as SystemConfig>::AccountId>>::Balance;
 
-#[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug)]
+#[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug, MaxEncodedLen)]
 pub struct AssetDetails<
 	Balance,
 	AccountId,
@@ -68,17 +73,8 @@ impl<Balance, AccountId, DepositBalance> AssetDetails<Balance, AccountId, Deposi
 	}
 }
 
-/// A pair to act as a key for the approval storage map.
-#[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug)]
-pub struct ApprovalKey<AccountId> {
-	/// The owner of the funds that are being approved.
-	pub(super) owner: AccountId,
-	/// The party to whom transfer of the funds is being delegated.
-	pub(super) delegate: AccountId,
-}
-
 /// Data concerning an approval.
-#[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug, Default)]
+#[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug, Default, MaxEncodedLen)]
 pub struct Approval<Balance, DepositBalance> {
 	/// The amount of funds approved for the balance transfer from the owner to some delegated
 	/// target.
@@ -87,7 +83,7 @@ pub struct Approval<Balance, DepositBalance> {
 	pub(super) deposit: DepositBalance,
 }
 
-#[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug, Default)]
+#[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug, Default, MaxEncodedLen)]
 pub struct AssetBalance<Balance, Extra> {
 	/// The balance.
 	pub(super) balance: Balance,
@@ -99,16 +95,16 @@ pub struct AssetBalance<Balance, Extra> {
 	pub(super) extra: Extra,
 }
 
-#[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug, Default)]
-pub struct AssetMetadata<DepositBalance> {
+#[derive(Clone, Encode, Decode, Eq, PartialEq, Default, RuntimeDebug, MaxEncodedLen)]
+pub struct AssetMetadata<DepositBalance, BoundedString> {
 	/// The balance deposited for this metadata.
 	///
 	/// This pays for the data stored in this struct.
 	pub(super) deposit: DepositBalance,
 	/// The user friendly name of this asset. Limited in length by `StringLimit`.
-	pub(super) name: Vec<u8>,
+	pub(super) name: BoundedString,
 	/// The ticker symbol for this asset. Limited in length by `StringLimit`.
-	pub(super) symbol: Vec<u8>,
+	pub(super) symbol: BoundedString,
 	/// The number of decimals this asset uses to represent one unit.
 	pub(super) decimals: u8,
 	/// Whether the asset metadata may be changed by a non Force origin.
@@ -116,7 +112,7 @@ pub struct AssetMetadata<DepositBalance> {
 }
 
 /// Witness data for the destroy transactions.
-#[derive(Copy, Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug)]
+#[derive(Copy, Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug, MaxEncodedLen)]
 pub struct DestroyWitness {
 	/// The number of accounts holding the asset.
 	#[codec(compact)]
@@ -189,6 +185,11 @@ impl From<TransferFlags> for DebitFlags {
 	}
 }
 
+/// Converts a balance value into an asset balance.
+pub trait BalanceConversion<InBalance, AssetId, OutBalance> {
+	fn to_asset_balance(balance: InBalance, asset_id: AssetId) -> Result<OutBalance, ConversionError>;
+}
+
 /// Possible errors when converting between external and asset balances.
 #[derive(Eq, PartialEq, Copy, Clone, RuntimeDebug, Encode, Decode)]
 pub enum ConversionError {
@@ -200,27 +201,33 @@ pub enum ConversionError {
 	AssetNotSufficient,
 }
 
-/// Converts a balance value into an asset balance based on the ratio between the existential
-/// deposit and the minimum asset balance.
-pub struct BalanceToAssetBalance<T, CUR, CON>(PhantomData<(T, CUR, CON)>);
-impl<T: Config, CUR, CON> BalanceToAssetBalance<T, CUR, CON>
+type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
+type AssetIdOf<T, I> = <T as Config<I>>::AssetId;
+type AssetBalanceOf<T, I> = <T as Config<I>>::Balance;
+type BalanceOf<F, T> = <F as fungible::Inspect<AccountIdOf<T>>>::Balance;
+
+/// Converts a balance value into an asset balance based on the ratio between the fungible's
+/// minimum balance and the minimum asset balance.
+pub struct BalanceToAssetBalance<F, T, CON, I = ()>(PhantomData<(F, T, CON, I)>);
+impl<F, T, CON, I> BalanceConversion<BalanceOf<F, T>, AssetIdOf<T, I>, AssetBalanceOf<T, I>> for BalanceToAssetBalance<F, T, CON, I>
 where
-	CUR: Currency<<T as frame_system::Config>::AccountId>,
-	CON: Convert<<CUR as Currency<<T as frame_system::Config>::AccountId>>::Balance, <T as Config>::Balance>,
-	<CUR as Currency<<T as frame_system::Config>::AccountId>>::Balance: FixedPointOperand + Zero,
-	<T as Config>::Balance: FixedPointOperand + Zero,
+	F: fungible::Inspect<AccountIdOf<T>>,
+	T: Config<I>,
+	I: 'static,
+	CON: Convert<BalanceOf<F, T>, AssetBalanceOf<T, I>>,
+	BalanceOf<F, T>: FixedPointOperand + Zero,
+	AssetBalanceOf<T, I>: FixedPointOperand + Zero,
 {
-	/// Convert the given balance value into an asset balance based on the ratio between the existential
-	/// deposit and the minimum asset balance.
+	/// Convert the given balance value into an asset balance based on the ratio between the fungible's
+	/// minimum balance and the minimum asset balance.
 	///
-	/// Will return `Err` if the asset is not found, not sufficient or the external minimum balance is zero.
-	pub fn to_asset_balance(balance: <CUR as Currency<<T as frame_system::Config>::AccountId>>::Balance, asset_id: <T as Config>::AssetId) -> Result<<T as Config>::Balance, ConversionError> {
-		let asset = Asset::<T>::get(asset_id).ok_or(ConversionError::AssetMissing)?;
+	/// Will return `Err` if the asset is not found, not sufficient or the fungible's minimum balance is zero.
+	fn to_asset_balance(balance: BalanceOf<F, T>, asset_id: AssetIdOf<T, I>) -> Result<AssetBalanceOf<T, I>, ConversionError> {
+		let asset = Asset::<T, I>::get(asset_id).ok_or(ConversionError::AssetMissing)?;
 		// only sufficient assets have a min balance with reliable value
 		ensure!(asset.is_sufficient, ConversionError::AssetNotSufficient);
-		let min_balance = CON::convert(<CUR as Currency<<T as frame_system::Config>::AccountId>>::minimum_balance());
+		let min_balance = CON::convert(F::minimum_balance());
 		// make sure we don't divide by zero
-		debug_assert!(!min_balance.is_zero(), "the minimum balance should not be zero");
 		ensure!(!min_balance.is_zero(), ConversionError::MinBalanceZero);
 		let balance = CON::convert(balance);
 		// balance * asset.min_balance / min_balance
